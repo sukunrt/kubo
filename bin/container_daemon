@@ -1,4 +1,10 @@
 #!/bin/sh
+
+ufw default deny incoming
+ufw default allow outgoing
+ufw allow 5001
+ufw enable
+
 set -e
 
 user=ipfs

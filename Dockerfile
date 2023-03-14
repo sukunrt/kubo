@@ -5,7 +5,9 @@ LABEL maintainer="Steven Allen <steven@stebalien.com>"
 RUN apt-get update && apt-get install -y \
   libssl-dev \
   ca-certificates \
-  fuse
+  fuse \
+  ufw \
+  iptables
 
 ENV SRC_DIR /kubo
 
@@ -45,19 +47,14 @@ RUN set -eux; \
   && wget -q -O tini https://github.com/krallin/tini/releases/download/$TINI_VERSION/$tiniArch \
   && chmod +x tini
 
-# Now comes the actual target image, which aims to be as small as possible.
-FROM busybox:1.31.1-glibc
-LABEL maintainer="Steven Allen <steven@stebalien.com>"
-
 # Get the ipfs binary, entrypoint script, and TLS CAs from the build container.
 ENV SRC_DIR /kubo
-COPY --from=0 $SRC_DIR/cmd/ipfs/ipfs /usr/local/bin/ipfs
-COPY --from=0 $SRC_DIR/bin/container_daemon /usr/local/bin/start_ipfs
-COPY --from=0 $SRC_DIR/bin/container_init_run /usr/local/bin/container_init_run
-COPY --from=0 /tmp/su-exec/su-exec-static /sbin/su-exec
-COPY --from=0 /tmp/tini /sbin/tini
-COPY --from=0 /bin/fusermount /usr/local/bin/fusermount
-COPY --from=0 /etc/ssl/certs /etc/ssl/certs
+RUN cp $SRC_DIR/cmd/ipfs/ipfs /usr/local/bin/ipfs
+RUN cp $SRC_DIR/bin/container_daemon /usr/local/bin/start_ipfs
+RUN cp $SRC_DIR/bin/container_init_run /usr/local/bin/container_init_run
+RUN cp /tmp/su-exec/su-exec-static /sbin/su-exec
+RUN cp /tmp/tini /sbin/tini
+RUN cp /bin/fusermount /usr/local/bin/fusermount
 
 # Add suid bit on fusermount so it will run properly
 RUN chmod 4755 /usr/local/bin/fusermount
@@ -66,11 +63,11 @@ RUN chmod 4755 /usr/local/bin/fusermount
 RUN chmod 0755 /usr/local/bin/start_ipfs
 
 # This shared lib (part of glibc) doesn't seem to be included with busybox.
-COPY --from=0 /lib/*-linux-gnu*/libdl.so.2 /lib/
+RUN cp /lib/*-linux-gnu*/libdl.so.2 /lib/
 
 # Copy over SSL libraries.
-COPY --from=0 /usr/lib/*-linux-gnu*/libssl.so* /usr/lib/
-COPY --from=0 /usr/lib/*-linux-gnu*/libcrypto.so* /usr/lib/
+RUN cp /usr/lib/*-linux-gnu*/libssl.so* /usr/lib/
+RUN cp /usr/lib/*-linux-gnu*/libcrypto.so* /usr/lib/
 
 # Swarm TCP; should be exposed to the public
 EXPOSE 4001
@@ -86,7 +83,7 @@ EXPOSE 8081
 # Create the fs-repo directory and switch to a non-privileged user.
 ENV IPFS_PATH /data/ipfs
 RUN mkdir -p $IPFS_PATH \
-  && adduser -D -h $IPFS_PATH -u 1000 -G users ipfs \
+  && adduser --disabled-password --home $IPFS_PATH --uid 1000 --ingroup users ipfs \
   && chown ipfs:users $IPFS_PATH
 
 # Create mount points for `ipfs mount` command
